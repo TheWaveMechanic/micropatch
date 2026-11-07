@@ -88,6 +88,7 @@ export default function App() {
   const [patchScale, setPatchScale] = useState<number>(loadPatchScale);
   const [patchScaleDraft, setPatchScaleDraft] = useState<string>(() => String(loadPatchScale()));
   const [patchAreaHeight, setPatchAreaHeight] = useState(0);
+  const [patchAreaMinWidth, setPatchAreaMinWidth] = useState(0);
   const patchAreaRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     try {
@@ -96,14 +97,27 @@ export default function App() {
       // Storage unavailable: setting lasts for this visit only
     }
   }, [patchScale]);
-  // Unscaled height of the patching area, so the page shrinks with the scale
+  // Unscaled height and widest board panel of the patching area, so the page shrinks with the scale
   useEffect(() => {
     const el = patchAreaRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setPatchAreaHeight(el.offsetHeight));
+    if (!el) return;
+    const measure = () => {
+      setPatchAreaHeight(el.offsetHeight);
+      let minWidth = 0;
+      el.querySelectorAll<HTMLElement>('[id^="breadboard-svg-"]').forEach(board => {
+        const panel = board.parentElement;
+        const cs = panel ? getComputedStyle(panel) : null;
+        const padding = cs ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) : 0;
+        minWidth = Math.max(minWidth, board.offsetWidth + padding);
+      });
+      setPatchAreaMinWidth(minWidth);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [breadboards, layouts]);
   const patchScaleFactor = patchScale / 100;
   // Placement computed for the board under the pointer (null when no board is under it)
   const pointerPreviewRef = useRef<{ boardId: string; x: number; y: number; valid: boolean } | null>(null);
@@ -1041,11 +1055,11 @@ export default function App() {
         </div>
         {/* Main: Breadboard rendering area */}
         <div style={{ flex: 1, padding: 24, position: 'relative' }}>
-          {/* Patching-area scale: outer box takes the scaled height, inner box is scaled */}
-          <div style={patchScale !== 100 ? { height: patchAreaHeight * patchScaleFactor } : undefined}>
+          {/* Patching-area scale: outer box takes the scaled size, inner box is scaled and out of flow */}
+          <div style={patchScale !== 100 ? { position: 'relative', height: patchAreaHeight * patchScaleFactor, minWidth: patchAreaMinWidth * patchScaleFactor } : undefined}>
           <div
             ref={patchAreaRef}
-            style={patchScale !== 100 ? { transform: `scale(${patchScaleFactor})`, transformOrigin: '0 0', width: `${100 / patchScaleFactor}%` } : undefined}
+            style={patchScale !== 100 ? { position: 'absolute', top: 0, left: 0, transform: `scale(${patchScaleFactor})`, transformOrigin: '0 0', width: `${100 / patchScaleFactor}%` } : undefined}
           >
           {/* Render all breadboards as SVG */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: BREADBOARD_SPACING, position: 'relative', zIndex: 1 }}>
