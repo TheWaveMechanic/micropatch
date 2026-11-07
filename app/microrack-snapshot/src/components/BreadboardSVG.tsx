@@ -6,7 +6,8 @@ import {
   BREADBOARD_DISPLAY_SCALE,
   BREADBOARD_GRID_PADDING,
   BREADBOARD_CELL_SIZE,
-  BREADBOARD_MARGIN
+  BREADBOARD_MARGIN,
+  getBoardBottomRows
 } from '../breadboardConfig';
 import { calculateModulePinPositions, type AllPin } from "../utils/pinPositioning";
 
@@ -14,7 +15,7 @@ export interface ModuleInstance {
   id: string;
   type: string;
   x: number; // pin column
-  y: number; // row (if needed)
+  y: number; // rows from the layout bottom to the module's board bottom (0 = last board)
   width: number; // in pins
   height: number; // in px
   pcbImage: string;
@@ -41,6 +42,7 @@ export interface BreadboardSVGProps {
   dndId: string;
   dragPreview?: {
     x: number | null;
+    y?: number | null;
     unitsWidth: number | null;
     valid: boolean | null;
     pins: number[] | null;
@@ -82,9 +84,9 @@ function DraggableModule({ mod, cellSize, margin, gridPadding = 20, onKnobChange
       mod: mod
     }
   });
-    // Calculate bottom-aligned position
+    // Calculate bottom-aligned position (on the module's board when boards are stacked)
     const scaledCellSize = cellSize * BREADBOARD_VERTICAL_SCALE;
-    const breadboardHeight = layout.length * scaledCellSize + (layout.length - 1) * margin;
+    const breadboardHeight = (layout.length - (mod.y || 0)) * scaledCellSize + (layout.length - (mod.y || 0) - 1) * margin;
     const modY = gridPadding + breadboardHeight - mod.height;
     
     return (
@@ -178,14 +180,20 @@ export default function BreadboardSVG({
   const { setNodeRef, isOver } = useDroppable({ id: dndId });
   const [debugCoords, setDebugCoords] = useState<{x: number, y: number} | null>(null);
 
+  // Rail rows of the board the drag preview is on (layouts may stack several boards)
+  const previewBottom = rows - 1 - (dragPreview?.y || 0);
+  const previousBottom = getBoardBottomRows(layout).filter(b => b < previewBottom).pop();
+  let previewTop = previousBottom === undefined ? 0 : previousBottom + 1;
+  while (previousBottom !== undefined && previewTop < rows && !/[PM]/.test(layout[previewTop])) previewTop++;
+
   // Collect pin positions for all modules
   const pinPositions: Record<string, { input: { x: number, y: number, pinId: string }[][]; output: { x: number, y: number, pinId: string }[][] }> = {};
   // For hit-testing
   const allPins: Record<string, AllPin> = {};
   modules.forEach(mod => {
     const modX = BREADBOARD_GRID_PADDING + mod.x * (cellSize + margin);
-    // Position module to align bottom edge with bottom of breadboard
-    const breadboardHeight = rows * scaledCellSize + (rows - 1) * margin;
+    // Position module to align bottom edge with bottom of its breadboard
+    const breadboardHeight = (rows - (mod.y || 0)) * scaledCellSize + (rows - (mod.y || 0) - 1) * margin;
     const modY = BREADBOARD_GRID_PADDING + breadboardHeight - mod.height;
     const width = mod.width * cellSize + (mod.width - 1) * margin;
     const height = mod.height;
@@ -247,11 +255,10 @@ export default function BreadboardSVG({
                 Number.isInteger(dragPreview.x ?? undefined) &&
                 Number.isInteger(dragPreview.unitsWidth ?? undefined)
               ) {
-                const numRows = layout.length;
                 const x0 = dragPreview.x ?? 0;
                 const w = dragPreview.unitsWidth ?? 1;
-                const isUpperPinRow = y === 0 || y === 1;
-                const isLowerPinRow = y === numRows - 2 || y === numRows - 1;
+                const isUpperPinRow = y === previewTop || y === previewTop + 1;
+                const isLowerPinRow = y === previewBottom - 1 || y === previewBottom;
                 const isPinRow = isUpperPinRow || isLowerPinRow;
                 const pinIndex = x - x0;
                 const isPinCell = isPinRow && dragPreview.pins?.includes(pinIndex);
@@ -328,7 +335,7 @@ export default function BreadboardSVG({
         {/* Module slug labels */}
         {modules.map((mod) => {
           const scaledCellSize = cellSize * BREADBOARD_VERTICAL_SCALE;
-          const breadboardHeight = layout.length * scaledCellSize + (layout.length - 1) * margin;
+          const breadboardHeight = (layout.length - (mod.y || 0)) * scaledCellSize + (layout.length - (mod.y || 0) - 1) * margin;
           const modY = BREADBOARD_GRID_PADDING + breadboardHeight - mod.height;
           const labelY = modY + mod.height + 15; // Position below module
           const labelX = BREADBOARD_GRID_PADDING + mod.x * (cellSize + margin) + (mod.width * cellSize + (mod.width - 1) * margin) / 2; // Center horizontally

@@ -10,7 +10,8 @@ import {
   BREADBOARD_GRID_PADDING,
   BREADBOARD_SPACING,
   BREADBOARD_CELL_SIZE,
-  BREADBOARD_MARGIN
+  BREADBOARD_MARGIN,
+  getBoardBottomRows
 } from './breadboardConfig';
 import { loadImageDimensions, calculateModuleHeight } from './utils/imageLoader';
 import { generateInstructions } from './utils/instructionGenerator';
@@ -24,6 +25,29 @@ const getBreadboardTypes = (layouts: Record<string, string[]>) => {
 
 function isPinObj(obj: any): obj is { pinId: string } {
   return typeof obj === 'object' && obj !== null && typeof obj.pinId === 'string';
+}
+
+// Pointer (client px) to breadboard SVG user units; exact at any patching-area scale.
+function clientToSvg(svg: SVGSVGElement, clientX: number, clientY: number) {
+  const rect = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  if (!rect.width || !rect.height || !vb || !vb.width || !vb.height) return null;
+  return {
+    x: (clientX - rect.left) * vb.width / rect.width,
+    y: (clientY - rect.top) * vb.height / rect.height
+  };
+}
+
+const PATCH_SCALE_STORAGE_KEY = 'micropatch.patchAreaScale';
+
+function loadPatchScale() {
+  try {
+    const v = Number(localStorage.getItem(PATCH_SCALE_STORAGE_KEY));
+    if (v >= 10 && v <= 100) return v;
+  } catch {
+    // Storage unavailable: use full size
+  }
+  return 100;
 }
 
 export default function App() {
@@ -60,6 +84,27 @@ export default function App() {
   const [hoveredModuleCoords, setHoveredModuleCoords] = useState<{moduleId: string, x: number, y: number} | null>(null);
   const [isLoadingPatch, setIsLoadingPatch] = useState(false);
   const [patchName, setPatchName] = useState('');
+  // Patching-area scale in percent (10-100), remembered between visits
+  const [patchScale, setPatchScale] = useState<number>(loadPatchScale);
+  const [patchScaleDraft, setPatchScaleDraft] = useState<string>(() => String(loadPatchScale()));
+  const [patchAreaHeight, setPatchAreaHeight] = useState(0);
+  const patchAreaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    try {
+      localStorage.setItem(PATCH_SCALE_STORAGE_KEY, String(patchScale));
+    } catch {
+      // Storage unavailable: setting lasts for this visit only
+    }
+  }, [patchScale]);
+  // Unscaled height of the patching area, so the page shrinks with the scale
+  useEffect(() => {
+    const el = patchAreaRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => setPatchAreaHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const patchScaleFactor = patchScale / 100;
   // Ref to always have latest pendingCable in pointer event handlers
   const pendingCableRef = useRef(pendingCable);
   useEffect(() => { pendingCableRef.current = pendingCable; }, [pendingCable]);
@@ -206,13 +251,9 @@ export default function App() {
           setMouseCol(undefined);
           return;
         }
-        // --- Fix: use only getScreenCTM for SVG mapping, no manual scaling ---
-        const svgRect = svg.getBoundingClientRect();
-        const pt = svg.createSVGPoint();
-        pt.x = evt.clientX;
-        pt.y = evt.clientY;
-        const ctm = svg.getScreenCTM();
-        if (!ctm) {
+        // Map the pointer through the SVG's on-screen rect, so any patching-area scale is exact
+        const svgP = clientToSvg(svg, evt.clientX, evt.clientY);
+        if (!svgP) {
           setMouseSvgX(undefined);
           setMouseSvgY(undefined);
           setMouseRelX(undefined);
@@ -220,7 +261,6 @@ export default function App() {
           setMouseCol(undefined);
           return;
         }
-        const svgP = pt.matrixTransform(ctm.inverse());
         setMouseSvgX(svgP.x);
         setMouseSvgY(svgP.y);
         const relX = svgP.x - BREADBOARD_GRID_PADDING; // use grid padding
@@ -246,11 +286,16 @@ export default function App() {
         let x = Math.floor(relXCentered / (cellSize + margin));
         x = Math.max(0, Math.min(x, layout[0].length - unitsWidth));
         setMouseCol(x);
+        // Board under the pointer when the layout stacks several boards (y = rows from layout bottom)
+        const boardBottoms = getBoardBottomRows(layout);
+        const mouseRow = Math.floor((svgP.y - BREADBOARD_GRID_PADDING) / (cellSize * BREADBOARD_VERTICAL_SCALE + margin));
+        const boardBottom = boardBottoms.find(b => b >= mouseRow) ?? boardBottoms[boardBottoms.length - 1];
+        const y = layout.length - 1 - boardBottom;
         let valid = true;
         // --- Overlap validation ---
         const draggedId = draggedModule.id || draggedModule.modId;
         const modulesOnBoard = modules.filter(
-          m => m.breadboardId === boardId && m.id !== draggedId
+          m => m.breadboardId === boardId && m.id !== draggedId && (m.y || 0) === y
         );
         for (let m of modulesOnBoard) {
           if ((x < m.x + m.width) && (x + unitsWidth > m.x)) {
@@ -263,7 +308,7 @@ export default function App() {
         if (draggedModule.legsPattern !== "virtual") {
           // Check bottom rows instead of top rows (for bottom-aligned modules)
           for (let rowOffset = 0; rowOffset < 2; rowOffset++) {
-            const rowIndex = layout.length - 2 + rowOffset; // Bottom two rows
+            const rowIndex = boardBottom - 1 + rowOffset; // Bottom two rows of the board
             const row = layout[rowIndex];
             if (!row) { valid = false; break; }
             for (let i of pinOffsets) {
@@ -273,7 +318,7 @@ export default function App() {
             }
           }
         }
-        setDragPreview({ boardId, x, unitsWidth, valid, pins: pinOffsets });
+        setDragPreview({ boardId, x, y, unitsWidth, valid, pins: pinOffsets });
       };
       window.addEventListener('mousemove', mouseMoveHandler);
     }
@@ -430,7 +475,7 @@ export default function App() {
       
       setModules(mods => mods.map(m =>
         m.id === active.data.current.modId
-          ? { ...m, breadboardId: boardId, x: dragPreview.x, height, legsPattern: m.legsPattern || "" }
+          ? { ...m, breadboardId: boardId, x: dragPreview.x, y: dragPreview.y || 0, height, legsPattern: m.legsPattern || "" }
           : m
       ));
       return;
@@ -465,7 +510,7 @@ export default function App() {
           id: uuidv4(),
           type: active.data.current.meta.slug,
           x: dragPreview.x,
-          y: 0,
+          y: dragPreview.y || 0,
           width: active.data.current.meta.unitsWidth || 5,
           height,
           pcbImage: `./modules/${active.data.current.meta.slug}/panel.png`,
@@ -858,12 +903,8 @@ export default function App() {
         const svg = document.getElementById('svg-breadboard-svg-' + breadboardId) as SVGSVGElement | null;
         
         if (svg && typeof svg.createSVGPoint === 'function') {
-          const pt = svg.createSVGPoint();
-          pt.x = event.clientX;
-          pt.y = event.clientY;
-          const ctm = svg.getScreenCTM();
-          if (ctm) {
-            const svgP = pt.matrixTransform(ctm.inverse());
+          const svgP = clientToSvg(svg, event.clientX, event.clientY);
+          if (svgP) {
             mouseSvg = { x: svgP.x, y: svgP.y };
             
             // Check pins on this breadboard
@@ -910,12 +951,8 @@ export default function App() {
         const svg = document.getElementById('svg-breadboard-svg-' + breadboardId) as SVGSVGElement | null;
         
         if (svg && typeof svg.createSVGPoint === 'function') {
-          const pt = svg.createSVGPoint();
-          pt.x = event.clientX;
-          pt.y = event.clientY;
-          const ctm = svg.getScreenCTM();
-          if (ctm) {
-            const svgP = pt.matrixTransform(ctm.inverse());
+          const svgP = clientToSvg(svg, event.clientX, event.clientY);
+          if (svgP) {
             mouseSvg = { x: svgP.x, y: svgP.y };
             
             // Check pins on this breadboard
@@ -997,6 +1034,12 @@ export default function App() {
         </div>
         {/* Main: Breadboard rendering area */}
         <div style={{ flex: 1, padding: 24, position: 'relative' }}>
+          {/* Patching-area scale: outer box takes the scaled height, inner box is scaled */}
+          <div style={patchScale !== 100 ? { height: patchAreaHeight * patchScaleFactor } : undefined}>
+          <div
+            ref={patchAreaRef}
+            style={patchScale !== 100 ? { transform: `scale(${patchScaleFactor})`, transformOrigin: '0 0', width: `${100 / patchScaleFactor}%` } : undefined}
+          >
           {/* Render all breadboards as SVG */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: BREADBOARD_SPACING, position: 'relative', zIndex: 1 }}>
             {breadboards.map((board, boardIndex) => {
@@ -1127,6 +1170,8 @@ export default function App() {
               );
             })}
           </div>
+          </div>
+          </div>
           {/* Debug overlay - yellow squares showing calculated breadboard positions */}
           {debugMode && (
             <div style={{
@@ -1175,6 +1220,7 @@ export default function App() {
             breadboards={breadboards}
             layouts={layouts}
             pendingCable={pendingCable}
+            scale={patchScaleFactor}
           />
         </div>
         {/* Right sidebar: Breadboard controls */}
@@ -1213,6 +1259,47 @@ export default function App() {
             </div>
             
             <button onClick={addBreadboard} style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #4fa", background: "#1a3a2a", color: "#4fa", fontWeight: 500 }}>+ Add Breadboard</button>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ color: "#ccc", fontSize: 14 }}>Patch Area Scale:</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="range"
+                  min={10}
+                  max={100}
+                  step={1}
+                  value={patchScale}
+                  onChange={e => {
+                    const v = Number(e.target.value);
+                    setPatchScale(v);
+                    setPatchScaleDraft(String(v));
+                  }}
+                  style={{ flex: 1, minWidth: 0 }}
+                  aria-label="Patch area scale"
+                />
+                <input
+                  type="number"
+                  min={10}
+                  max={100}
+                  step="any"
+                  value={patchScaleDraft}
+                  onChange={e => {
+                    setPatchScaleDraft(e.target.value);
+                    const v = Number(e.target.value);
+                    if (e.target.value !== '' && v >= 10 && v <= 100) setPatchScale(v);
+                  }}
+                  onBlur={() => {
+                    const v = Number(patchScaleDraft);
+                    const clamped = patchScaleDraft === '' || isNaN(v) ? patchScale : Math.min(100, Math.max(10, v));
+                    setPatchScale(clamped);
+                    setPatchScaleDraft(String(clamped));
+                  }}
+                  style={{ width: 64, padding: "6px 8px", borderRadius: 6, border: "1px solid #555", background: "#222", color: "#fff" }}
+                  aria-label="Patch area scale percent"
+                />
+                <span style={{ color: "#ccc", fontSize: 14 }}>%</span>
+              </div>
+            </div>
           </div>
           
           <hr style={{ border: "none", borderTop: "1px solid #333", margin: "8px 0" }} />

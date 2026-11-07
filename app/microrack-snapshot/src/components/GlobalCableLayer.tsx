@@ -14,6 +14,7 @@ interface GlobalCableLayerProps {
   breadboards: Array<{ id: string; type: string }>;
   layouts: Record<string, string[]>;
   pendingCable?: any;
+  scale?: number; // patching-area scale factor (1 = full size)
 }
 
 export default function GlobalCableLayer({ 
@@ -21,7 +22,8 @@ export default function GlobalCableLayer({
   modules, 
   breadboards, 
   layouts, 
-  pendingCable 
+  pendingCable,
+  scale = 1
 }: GlobalCableLayerProps) {
   const [allPinPositions, setAllPinPositions] = useState<Record<string, any>>({});
   
@@ -39,9 +41,9 @@ export default function GlobalCableLayer({
           const svgRect = svgElement.getBoundingClientRect();
           const containerRect = mainContainer.getBoundingClientRect();
           
-          // Calculate position relative to main container (accounts for scroll)
-          const offsetX = svgRect.left - containerRect.left;
-          const offsetY = svgRect.top - containerRect.top;
+          // Calculate position relative to main container (accounts for scroll), in unscaled units
+          const offsetX = (svgRect.left - containerRect.left) / scale;
+          const offsetY = (svgRect.top - containerRect.top) / scale;
           
           // Transform pin positions from breadboard-local to global coordinates
           const boardPins = (window as any)._allPinsByBreadboard[board.id];
@@ -74,7 +76,7 @@ export default function GlobalCableLayer({
     const timeoutId = setTimeout(updatePinPositions, 100);
     
     return () => clearTimeout(timeoutId);
-  }, [breadboards, modules, layouts]);
+  }, [breadboards, modules, layouts, scale]);
   
   const parsePinId = (pinId: string) => {
     const parts = pinId.split(':');
@@ -196,6 +198,7 @@ export default function GlobalCableLayer({
           pointerEvents: 'none'
         }}
       >
+        <g transform={scale !== 1 ? `scale(${scale})` : undefined}>
         {/* Render all cables */}
         {cables.map(cable => {
           const fromEndpoint = parsePinId(cable.from);
@@ -222,8 +225,8 @@ export default function GlobalCableLayer({
           if (mainContainer) {
             const containerRect = mainContainer.getBoundingClientRect();
             mouseSvg = {
-              x: pendingCable.mouse.x - containerRect.left,
-              y: pendingCable.mouse.y - containerRect.top
+              x: (pendingCable.mouse.x - containerRect.left) / scale,
+              y: (pendingCable.mouse.y - containerRect.top) / scale
             };
           }
           
@@ -258,6 +261,7 @@ export default function GlobalCableLayer({
             </g>
           );
         })()}
+        </g>
       </svg>
     </div>
   );
