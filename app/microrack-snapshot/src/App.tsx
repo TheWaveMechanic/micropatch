@@ -908,6 +908,7 @@ export default function App() {
 
   // Start over: one empty breadboard, as when the page first opens
   const handleInitializePatch = () => {
+    if (!window.confirm('Start a new patch? Anything not saved to a file will be lost.')) return;
     setModules([]);
     setCables([]);
     setPendingCable({ from: null, mouse: null });
