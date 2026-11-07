@@ -340,7 +340,7 @@ export default function BreadboardSVG({
           const scaledCellSize = cellSize * BREADBOARD_VERTICAL_SCALE;
           const breadboardHeight = (layout.length - (mod.y || 0)) * scaledCellSize + (layout.length - (mod.y || 0) - 1) * margin;
           const modY = BREADBOARD_GRID_PADDING + breadboardHeight - mod.height;
-          const labelY = modY + mod.height + 15; // Position below module
+          const labelY = modY + mod.height + 2; // Top of the text just below its module
           const labelX = BREADBOARD_GRID_PADDING + mod.x * (cellSize + margin) + (mod.width * cellSize + (mod.width - 1) * margin) / 2; // Center horizontally
           
           return (
@@ -351,6 +351,7 @@ export default function BreadboardSVG({
               fill="#fff"
               fontSize={12}
               textAnchor="middle"
+              dominantBaseline="hanging"
               style={{ userSelect: 'none', pointerEvents: 'none' }}
             >
               {mod.type}
