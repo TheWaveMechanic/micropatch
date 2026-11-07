@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import ModuleSVG, { type PinDef, type KnobDef, type SwitchDef } from "./ModuleSVG";
-import { useDroppable, useDraggable } from '@dnd-kit/core';
+import { useDroppable, useDraggable, useDndContext } from '@dnd-kit/core';
 import {
   BREADBOARD_VERTICAL_SCALE,
   BREADBOARD_DISPLAY_SCALE,
@@ -84,6 +84,9 @@ function DraggableModule({ mod, cellSize, margin, gridPadding = 20, onKnobChange
       mod: mod
     }
   });
+  // An Option/Alt drag drops a copy, so the original stays fully visible
+  const { activatorEvent } = useDndContext();
+  const fadeOriginal = isDragging && !(activatorEvent as MouseEvent | null)?.altKey;
     // Calculate bottom-aligned position (on the module's board when boards are stacked)
     const scaledCellSize = cellSize * BREADBOARD_VERTICAL_SCALE;
     const breadboardHeight = (layout.length - (mod.y || 0)) * scaledCellSize + (layout.length - (mod.y || 0) - 1) * margin;
@@ -101,7 +104,7 @@ function DraggableModule({ mod, cellSize, margin, gridPadding = 20, onKnobChange
         ref={setNodeRef}
         {...listeners}
         {...attributes}
-        style={{ cursor: 'grab', opacity: isDragging ? 0.2 : 1, width: '100%', height: '100%' }}
+        style={{ cursor: 'grab', opacity: fadeOriginal ? 0.2 : 1, width: '100%', height: '100%' }}
       >
         <svg
           width={mod.width * cellSize + (mod.width - 1) * margin}

@@ -80,7 +80,6 @@ This is a **web-based patchbook for Microrack modular synths** that allows visua
 ### Development Notes
 
 - Uses Vite for build tooling with React and TypeScript
-- ESLint configuration with React hooks and TypeScript rules
 - Module positioning uses grid-based layout with collision detection
 - SVG-based rendering for breadboards and modules
 - Pointer events for cable drag interactions
