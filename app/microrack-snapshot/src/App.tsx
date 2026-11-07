@@ -51,10 +51,11 @@ function loadPatchScale() {
   return 100;
 }
 
+// A new patch starts with one empty breadboard
+const newPatchBoards = () => [{ id: uuidv4(), type: "bb-830" }];
+
 export default function App() {
-  const [breadboards, setBreadboards] = useState([
-    { id: uuidv4(), type: "bb-830" }
-  ]);
+  const [breadboards, setBreadboards] = useState(newPatchBoards);
   const [modules, setModules] = useState<ModuleInstance[]>([]);
   const [cables, setCables] = useState<{
     id: string;
@@ -905,6 +906,16 @@ export default function App() {
     }
   }, [breadboards, modules, cables, patchName]);
 
+  // Start over: one empty breadboard, as when the page first opens
+  const handleInitializePatch = () => {
+    setModules([]);
+    setCables([]);
+    setPendingCable({ from: null, mouse: null });
+    setHoveredPinId(null);
+    setBreadboards(newPatchBoards());
+    setPatchName('');
+  };
+
   // Save patch as JSON
   const handleSavePatch = () => {
     const data = buildPatchData();
@@ -1563,6 +1574,7 @@ export default function App() {
           
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <b style={{ color: "#fff", fontSize: 16 }}>Patch Management</b>
+            <button onClick={handleInitializePatch} style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #f66", background: "#3a1a1a", color: "#f66", fontWeight: 500 }}>🆕 Initialize Patch</button>
             <button onClick={handleSavePatch} style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #fa4", background: "#3a2a1a", color: "#fa4", fontWeight: 500 }}>💾 Save Patch</button>
             <button onClick={() => fileInputRef.current?.click()} disabled={isLoadingPatch} style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #4af", background: isLoadingPatch ? "#222" : "#1a2a3a", color: isLoadingPatch ? "#666" : "#4af", fontWeight: 500 }}>
               {isLoadingPatch ? "⏳ Loading..." : "📁 Load Patch"}
