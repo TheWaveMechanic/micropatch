@@ -9,7 +9,7 @@ Based on [micropatch](https://github.com/ignis32/micropatch) by Mikhail Penkin (
 - Dragged modules show at their landing spot, half transparent.
 - Option/Alt-drag duplicates a placed module.
 - **Save as PDF** in Patch Management, showing that it is working.
-- Panels match the current hardware: Mixer / VCA (blue band, "vca" label), delay (red band).
+- Panels match the current hardware: colored bottom bands, and the "vca" label on the Mixer / VCA.
 
 ## Security
 - Publishing workflow pinned to exact action versions, with least-privilege permissions.
