@@ -1273,7 +1273,8 @@ export default function App() {
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(15); // 20px
       doc.text(patchName || 'untitled', margin, margin, { baseline: 'top' });
-      doc.addImage(crop, 'PNG', margin, margin + titleHeight, width, height);
+      // High-quality JPEG: a raw bitmap of the patch would make the file tens of MB
+      doc.addImage(crop.toDataURL('image/jpeg', 0.9), 'JPEG', margin, margin + titleHeight, width, height);
       doc.save(patchName ? `${patchName}.pdf` : `micropatch-patch-${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (error) {
       console.error('Failed to save PDF:', error);
