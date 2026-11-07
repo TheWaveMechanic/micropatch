@@ -8,7 +8,7 @@ Based on [micropatch](https://github.com/ignis32/micropatch) by Mikhail Penkin (
 - Size slider (50–100%); the page shrinks with it.
 - Dragged modules show at their landing spot, half transparent.
 - Option/Alt-drag duplicates a placed module.
-- **Save as PDF** in Patch Management.
+- **Save as PDF** in Patch Management, showing that it is working.
 
 ## Security
 - Publishing workflow pinned to exact action versions, with least-privilege permissions.

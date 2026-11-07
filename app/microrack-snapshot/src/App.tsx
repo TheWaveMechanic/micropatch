@@ -1149,9 +1149,15 @@ export default function App() {
   };
 
   // Save the patching area as it appears, at full size whatever the scale, as a PDF titled with the patch name
+  const [savingPdf, setSavingPdf] = useState(false);
   const handleSaveAsPdf = async () => {
+    if (savingPdf) return;
     const mainContainer = document.querySelector('[style*="flex: 1"][style*="padding: 24"]') as HTMLElement | null;
     if (!mainContainer) return;
+    // Show the busy state, and let it paint before the rendering work starts
+    setSavingPdf(true);
+    document.body.style.cursor = 'progress';
+    await new Promise<void>(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
     try {
       const [{ toCanvas }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')]);
       const scale = patchScaleFactor;
@@ -1212,6 +1218,9 @@ export default function App() {
     } catch (error) {
       console.error('Failed to save PDF:', error);
       alert('Failed to save the patch as PDF. Check console for details.');
+    } finally {
+      document.body.style.cursor = '';
+      setSavingPdf(false);
     }
   };
 
@@ -1512,7 +1521,7 @@ export default function App() {
               {isLoadingPatch ? "⏳ Loading..." : "📁 Load Patch"}
             </button>
             <button onClick={handleGenerateInstructions} style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #af4", background: "#2a3a1a", color: "#af4", fontWeight: 500 }}>📋 Assembly Guide</button>
-            <button onClick={handleSaveAsPdf} style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #c8f", background: "#2a1a3a", color: "#c8f", fontWeight: 500 }}>Save as PDF</button>
+            <button onClick={handleSaveAsPdf} disabled={savingPdf} aria-busy={savingPdf} style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #c8f", background: "#2a1a3a", color: "#c8f", fontWeight: 500, opacity: savingPdf ? 0.6 : 1, cursor: savingPdf ? "progress" : undefined }}>{savingPdf ? "Saving PDF…" : "Save as PDF"}</button>
             <input ref={fileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={handleLoadPatch} />
           </div>
           
