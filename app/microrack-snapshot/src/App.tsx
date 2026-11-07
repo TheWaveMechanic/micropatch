@@ -1231,7 +1231,7 @@ export default function App() {
       doc.save(patchName ? `${patchName}.pdf` : `micropatch-patch-${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (error) {
       console.error('Failed to save PDF:', error);
-      alert('Failed to save the patch as PDF. Check console for details.');
+      alert(`Failed to save the patch as PDF:\n\n${error instanceof Error ? error.message : String(error)}`);
     } finally {
       document.body.style.cursor = '';
       setSavingPdf(false);
