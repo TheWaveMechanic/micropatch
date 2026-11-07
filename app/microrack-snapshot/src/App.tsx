@@ -1144,6 +1144,73 @@ export default function App() {
     }
   };
 
+  // Save the patching area as it appears, at full size whatever the scale, as a PDF titled with the patch name
+  const handleSaveAsPdf = async () => {
+    const mainContainer = document.querySelector('[style*="flex: 1"][style*="padding: 24"]') as HTMLElement | null;
+    if (!mainContainer) return;
+    try {
+      const [{ toCanvas }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')]);
+      const scale = patchScaleFactor;
+      const containerRect = mainContainer.getBoundingClientRect();
+      // On-screen bounds of the patch: board panels and drawn cables
+      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+      const include = (r: DOMRect, pad = 0) => {
+        left = Math.min(left, r.left - pad);
+        top = Math.min(top, r.top - pad);
+        right = Math.max(right, r.right + pad);
+        bottom = Math.max(bottom, r.bottom + pad);
+      };
+      breadboards.forEach(board => {
+        const panel = document.getElementById(`breadboard-svg-${board.id}`)?.parentElement;
+        if (panel) include(panel.getBoundingClientRect());
+      });
+      mainContainer.querySelectorAll(':scope > div > svg path').forEach(path => include(path.getBoundingClientRect(), 6 * scale));
+      if (!isFinite(left)) return;
+      left = Math.max(left, containerRect.left);
+      top = Math.max(top, containerRect.top);
+      right = Math.min(right, containerRect.right);
+      bottom = Math.min(bottom, containerRect.bottom);
+
+      const canvas = await toCanvas(mainContainer, {
+        pixelRatio: 2 / scale,
+        backgroundColor: '#181818',
+        // Leave out the debug overlay
+        filter: node => !(node instanceof HTMLElement && node.style.zIndex === '15')
+      });
+      const ratio = canvas.width / containerRect.width;
+      const crop = document.createElement('canvas');
+      crop.width = Math.round((right - left) * ratio);
+      crop.height = Math.round((bottom - top) * ratio);
+      const ctx = crop.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      ctx.drawImage(canvas, (left - containerRect.left) * ratio, (top - containerRect.top) * ratio, crop.width, crop.height, 0, 0, crop.width, crop.height);
+
+      // Page in CSS px at full size: margin, title, patch
+      const width = (right - left) / scale;
+      const height = (bottom - top) / scale;
+      const margin = 24;
+      const titleHeight = 40;
+      const pageWidth = width + 2 * margin;
+      const pageHeight = height + titleHeight + 2 * margin;
+      const doc = new jsPDF({
+        orientation: pageWidth > pageHeight ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [pageWidth, pageHeight],
+        hotfixes: ['px_scaling']
+      });
+      doc.setFillColor(24, 24, 24);
+      doc.rect(0, 0, pageWidth, pageHeight, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(15); // 20px
+      doc.text(patchName || 'untitled', margin, margin, { baseline: 'top' });
+      doc.addImage(crop, 'PNG', margin, margin + titleHeight, width, height);
+      doc.save(patchName ? `${patchName}.pdf` : `micropatch-patch-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (error) {
+      console.error('Failed to save PDF:', error);
+      alert('Failed to save the patch as PDF. Check console for details.');
+    }
+  };
+
   return (
     <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragOver={handleDragOver} collisionDetection={collisionDetection}>
       <div style={{ display: "flex", minHeight: "100vh", background: "#181818" }}>
@@ -1441,6 +1508,7 @@ export default function App() {
               {isLoadingPatch ? "⏳ Loading..." : "📁 Load Patch"}
             </button>
             <button onClick={handleGenerateInstructions} style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #af4", background: "#2a3a1a", color: "#af4", fontWeight: 500 }}>📋 Assembly Guide</button>
+            <button onClick={handleSaveAsPdf} style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #c8f", background: "#2a1a3a", color: "#c8f", fontWeight: 500 }}>Save as PDF</button>
             <input ref={fileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={handleLoadPatch} />
           </div>
           
