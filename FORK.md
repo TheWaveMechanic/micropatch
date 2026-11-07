@@ -1,0 +1,19 @@
+# About this fork
+
+Based on [micropatch](https://github.com/ignis32/micropatch) by Mikhail Penkin (ignis32), a web patchbook for MICRORACK modular synths. The original design and code are theirs.
+
+## Added
+- **Eurorack board**: the MICRORACK rack chassis, two stacked 830-hole boards with eight corner power slots.
+- Modules can sit across a corner slot and its rail.
+- Size slider (50–100%); the page shrinks with it.
+- Dragged modules show at their landing spot, half transparent.
+- Option/Alt-drag duplicates a placed module.
+- **Save as PDF** in Patch Management.
+
+## Security
+- Publishing workflow pinned to exact action versions, with least-privilege permissions.
+- Dependencies pinned and checked against known vulnerabilities; the published app has none known.
+- Local dev server reachable only from the same computer.
+- Module downloader rejects unsafe folder names and cannot hang.
+- Removed committed assistant settings that allowed unattended deletes and pushes.
+- Main branch protected; no outside contributions.
