@@ -105,6 +105,8 @@ export default function App() {
     return () => observer.disconnect();
   }, []);
   const patchScaleFactor = patchScale / 100;
+  // Placement computed for the board under the pointer (null when no board is under it)
+  const pointerPreviewRef = useRef<{ boardId: string; x: number; y: number; valid: boolean } | null>(null);
   // Ref to always have latest pendingCable in pointer event handlers
   const pendingCableRef = useRef(pendingCable);
   useEffect(() => { pendingCableRef.current = pendingCable; }, [pendingCable]);
@@ -220,6 +222,7 @@ export default function App() {
       mouseMoveHandler = (evt: MouseEvent) => {
         setMouseClientX(evt.clientX);
         setMouseClientY(evt.clientY);
+        pointerPreviewRef.current = null;
         // Always use elementsFromPoint to find the hovered breadboard SVG
         const underMouse = Array.from(document.elementsFromPoint(evt.clientX, evt.clientY));
         const svgEl = underMouse.find(el => el instanceof SVGSVGElement && el.id.startsWith('svg-breadboard-svg-')) as SVGSVGElement | undefined;
@@ -318,6 +321,7 @@ export default function App() {
             }
           }
         }
+        pointerPreviewRef.current = { boardId, x, y, valid };
         setDragPreview({ boardId, x, y, unitsWidth, valid, pins: pinOffsets });
       };
       window.addEventListener('mousemove', mouseMoveHandler);
@@ -440,6 +444,9 @@ export default function App() {
   const handleDragEnd = async (event: any) => {
     setDraggedModule(null);
     setDragPreview(null);
+    // Place on the board under the pointer, which the preview was computed for
+    const pointerPreview = pointerPreviewRef.current;
+    pointerPreviewRef.current = null;
     const { over, active } = event;
     if (!over || !active) return;
     const overId = over.id;
@@ -458,8 +465,8 @@ export default function App() {
     }
 
     // Handle moving existing module between breadboards or within breadboard
-    if (overId?.startsWith('breadboard-svg-') && active.data.current?.type === 'existing' && dragPreview && dragPreview.valid) {
-      const boardId = overId.replace('breadboard-svg-', '');
+    if (overId?.startsWith('breadboard-svg-') && active.data.current?.type === 'existing' && pointerPreview && pointerPreview.valid) {
+      const boardId = pointerPreview.boardId;
       const board = breadboards.find(b => b.id === boardId);
       const layout = board ? layouts[board.type] : null;
       const cellSize = 18;
@@ -475,15 +482,15 @@ export default function App() {
       
       setModules(mods => mods.map(m =>
         m.id === active.data.current.modId
-          ? { ...m, breadboardId: boardId, x: dragPreview.x, y: dragPreview.y || 0, height, legsPattern: m.legsPattern || "" }
+          ? { ...m, breadboardId: boardId, x: pointerPreview.x, y: pointerPreview.y, height, legsPattern: m.legsPattern || "" }
           : m
       ));
       return;
     }
 
     // Handle adding new module from browser
-    if (overId?.startsWith('breadboard-svg-') && active.data.current?.meta && dragPreview && dragPreview.valid) {
-      const boardId = overId.replace('breadboard-svg-', '');
+    if (overId?.startsWith('breadboard-svg-') && active.data.current?.meta && pointerPreview && pointerPreview.valid) {
+      const boardId = pointerPreview.boardId;
       const board = breadboards.find(b => b.id === boardId);
       const layout = board ? layouts[board.type] : null;
       const cellSize = 18;
@@ -509,8 +516,8 @@ export default function App() {
         {
           id: uuidv4(),
           type: active.data.current.meta.slug,
-          x: dragPreview.x,
-          y: dragPreview.y || 0,
+          x: pointerPreview.x,
+          y: pointerPreview.y,
           width: active.data.current.meta.unitsWidth || 5,
           height,
           pcbImage: `./modules/${active.data.current.meta.slug}/panel.png`,
