@@ -830,7 +830,8 @@ export default function App() {
           type: mod.type,
           x: mod.x || 0,
           y: mod.y || 0,
-          width: mod.width || meta.unitsWidth || 5,
+          // Width is the module's own (as is height above), not what an older save recorded
+          width: meta.unitsWidth || mod.width || 5,
           height,
           pcbImage: `./modules/${mod.type}/panel.png`,
           pcbImageLarge: `./modules/${mod.type}/panel_large.png`,
