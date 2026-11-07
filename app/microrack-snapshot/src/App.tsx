@@ -47,17 +47,6 @@ const collisionDetection: CollisionDetection = (args) => {
   return rectIntersection(args);
 };
 
-// Center the drag overlay on the pointer, as placement centers the module under it
-const centerOverlayOnPointer: Modifier = ({ transform, activatorEvent, draggingNodeRect }) => {
-  if (!draggingNodeRect || !activatorEvent || !('clientX' in activatorEvent)) return transform;
-  const e = activatorEvent as PointerEvent;
-  return {
-    ...transform,
-    x: transform.x + e.clientX - draggingNodeRect.left - draggingNodeRect.width / 2,
-    y: transform.y + e.clientY - draggingNodeRect.top - draggingNodeRect.height / 2
-  };
-};
-
 const PATCH_SCALE_STORAGE_KEY = 'micropatch.patchAreaScale';
 
 function loadPatchScale() {
@@ -86,8 +75,9 @@ export default function App() {
   const [draggedModule, setDraggedModule] = useState<any>(null);
   const [dragPreview, setDragPreview] = useState<any>(null);
   // New module being dragged from the list: its placed size, and whether the pointer is over the patching area
-  const [newModuleOverlay, setNewModuleOverlay] = useState<{ slug: string; unitsWidth: number; height: number } | null>(null);
-  const [dragOverPatchArea, setDragOverPatchArea] = useState(false);
+  const [newModuleOverlay, setNewModuleOverlay] = useState<{ slug: string; unitsWidth: number; height: number | null } | null>(null);
+  // Viewport position of the drag overlay's box (the list item's rect when the drag started)
+  const overlayOriginRef = useRef<{ left: number; top: number } | null>(null);
   const [mouseClientX, setMouseClientX] = useState<number | undefined>(undefined);
   const [mouseClientY, setMouseClientY] = useState<number | undefined>(undefined);
   const [mouseSvgX, setMouseSvgX] = useState<number | undefined>(undefined);
@@ -156,6 +146,37 @@ export default function App() {
   };
   // Placement computed for the board under the pointer (null when no board is under it)
   const pointerPreviewRef = useRef<{ boardId: string; x: number; y: number; valid: boolean } | null>(null);
+  // Places a new module's drag image exactly where it will land (the placement under the pointer),
+  // or centered on the pointer when no board is under it
+  const newModuleOverlayModifier: Modifier = ({ transform, activatorEvent, activeNodeRect }) => {
+    if (!newModuleOverlay || !activeNodeRect) return transform;
+    if (!overlayOriginRef.current) overlayOriginRef.current = { left: activeNodeRect.left, top: activeNodeRect.top };
+    const origin = overlayOriginRef.current;
+    const unit = BREADBOARD_DISPLAY_SCALE * patchScaleFactor;
+    const landing = pointerPreviewRef.current;
+    const board = landing ? breadboards.find(b => b.id === landing.boardId) : undefined;
+    const layout = board ? layouts[board.type] : undefined;
+    const svg = landing ? document.getElementById('svg-breadboard-svg-' + landing.boardId) as SVGSVGElement | null : null;
+    if (landing && layout && svg && newModuleOverlay.height !== null) {
+      const rect = svg.getBoundingClientRect();
+      const vb = svg.viewBox.baseVal;
+      const svgUnit = vb && vb.width ? rect.width / vb.width : unit;
+      const rowsToBottom = layout.length - landing.y;
+      const boardHeight = rowsToBottom * (18 * BREADBOARD_VERTICAL_SCALE) + (rowsToBottom - 1) * 2;
+      return {
+        ...transform,
+        x: rect.left + (BREADBOARD_GRID_PADDING + landing.x * (18 + 2)) * svgUnit - origin.left,
+        y: rect.top + (BREADBOARD_GRID_PADDING + boardHeight - newModuleOverlay.height) * svgUnit - origin.top
+      };
+    }
+    const activator = activatorEvent && 'clientX' in activatorEvent ? activatorEvent as PointerEvent : null;
+    const pointerX = mouseClientX ?? activator?.clientX;
+    const pointerY = mouseClientY ?? activator?.clientY;
+    if (pointerX === undefined || pointerY === undefined) return transform;
+    const width = (newModuleOverlay.unitsWidth * 18 + (newModuleOverlay.unitsWidth - 1) * 2) * unit;
+    const height = (newModuleOverlay.height ?? 0) * unit;
+    return { ...transform, x: pointerX - width / 2 - origin.left, y: pointerY - height / 2 - origin.top };
+  };
   // Ref to always have latest pendingCable in pointer event handlers
   const pendingCableRef = useRef(pendingCable);
   useEffect(() => { pendingCableRef.current = pendingCable; }, [pendingCable]);
@@ -274,8 +295,6 @@ export default function App() {
         pointerPreviewRef.current = null;
         // Always use elementsFromPoint to find the hovered breadboard SVG
         const underMouse = Array.from(document.elementsFromPoint(evt.clientX, evt.clientY));
-        const patchArea = document.querySelector('[style*="flex: 1"][style*="padding: 24"]');
-        setDragOverPatchArea(!!patchArea && underMouse.includes(patchArea));
         const svgEl = underMouse.find(el => el instanceof SVGSVGElement && el.id.startsWith('svg-breadboard-svg-')) as SVGSVGElement | undefined;
         const overId = svgEl ? svgEl.id.replace('svg-', '') : undefined;
         if (!overId) {
@@ -488,11 +507,17 @@ export default function App() {
     } else if (event.active.data.current?.meta) {
       const meta = event.active.data.current.meta;
       setDraggedModule(meta);
-      setNewModuleOverlay(null);
+      overlayOriginRef.current = null;
+      setMouseClientX(undefined);
+      setMouseClientY(undefined);
       const unitsWidth = meta.unitsWidth || 5;
+      setNewModuleOverlay({ slug: meta.slug, unitsWidth, height: null });
       loadImageDimensions(`./modules/${meta.slug}/panel_large.png`)
-        .then(d => setNewModuleOverlay({ slug: meta.slug, unitsWidth, height: calculateModuleHeight(unitsWidth, 18, 2, d.aspectRatio) }))
-        .catch(() => setNewModuleOverlay(null));
+        .then(d => {
+          const height = calculateModuleHeight(unitsWidth, 18, 2, d.aspectRatio);
+          setNewModuleOverlay(o => o && o.slug === meta.slug ? { ...o, height } : o);
+        })
+        .catch(() => {});
     } else {
       setDraggedModule(null);
     }
@@ -502,7 +527,7 @@ export default function App() {
     setDraggedModule(null);
     setDragPreview(null);
     setNewModuleOverlay(null);
-    setDragOverPatchArea(false);
+    overlayOriginRef.current = null;
     // Place on the board under the pointer, which the preview was computed for
     const pointerPreview = pointerPreviewRef.current;
     pointerPreviewRef.current = null;
@@ -1742,9 +1767,9 @@ export default function App() {
           </div>
         </div>
       </div>
-      <DragOverlay dropAnimation={null} modifiers={[centerOverlayOnPointer]}>
-        {/* New module from the list: its panel at the size it will have when placed, over the patching area */}
-        {newModuleOverlay && dragOverPatchArea && draggedModule?.slug === newModuleOverlay.slug && (
+      <DragOverlay dropAnimation={null} modifiers={[newModuleOverlayModifier]}>
+        {/* New module from the list: its panel at the size it will have when placed, where it will land */}
+        {newModuleOverlay && draggedModule?.slug === newModuleOverlay.slug && (
           <img
             src={`./modules/${newModuleOverlay.slug}/panel_large.png`}
             alt=""
@@ -1752,9 +1777,9 @@ export default function App() {
             style={{
               display: 'block',
               width: (newModuleOverlay.unitsWidth * 18 + (newModuleOverlay.unitsWidth - 1) * 2) * BREADBOARD_DISPLAY_SCALE * patchScaleFactor,
-              height: newModuleOverlay.height * BREADBOARD_DISPLAY_SCALE * patchScaleFactor,
+              height: newModuleOverlay.height !== null ? newModuleOverlay.height * BREADBOARD_DISPLAY_SCALE * patchScaleFactor : 'auto',
               objectFit: 'contain',
-              opacity: 0.85,
+              opacity: 0.5,
               pointerEvents: 'none',
               cursor: 'grabbing'
             }}
