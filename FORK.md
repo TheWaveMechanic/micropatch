@@ -9,6 +9,7 @@ Based on [micropatch](https://github.com/ignis32/micropatch) by Mikhail Penkin (
 - Dragged modules show at their landing spot, half transparent.
 - Option/Alt-drag duplicates a placed module.
 - **Save as PDF** in Patch Management, showing that it is working.
+- The current patch is kept in the browser and comes back when the page reopens; nothing leaves the computer.
 - Panels match the current hardware: colored bottom bands, and the "vca" label on the Mixer / VCA.
 
 ## Security

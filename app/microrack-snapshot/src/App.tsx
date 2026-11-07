@@ -39,6 +39,7 @@ function clientToSvg(svg: SVGSVGElement, clientX: number, clientY: number) {
 }
 
 const PATCH_SCALE_STORAGE_KEY = 'micropatch.patchAreaScale';
+const CURRENT_PATCH_STORAGE_KEY = 'micropatch.currentPatch';
 
 function loadPatchScale() {
   try {
@@ -701,8 +702,8 @@ export default function App() {
     });
   };
 
-  // Save patch as JSON
-  const handleSavePatch = () => {
+  // The current patch as saved data (the file format)
+  const buildPatchData = () => {
     const minimalModules = modules.map(m => ({
       id: m.id,
       type: m.type,
@@ -721,11 +722,193 @@ export default function App() {
       }, {} as Record<string, boolean>)
     }));
     const data = {
-      patchName: patchName || 'untitled',
+      patchName,
       breadboards,
       modules: minimalModules,
       cables
     };
+    return data;
+  };
+
+  // Replace the current patch with saved data; returns the cables that had to be skipped
+  const applyPatchData = async (data: any): Promise<string[]> => {
+    // Validate patch structure
+    if (!data.breadboards) {
+      throw new Error('Missing required field: breadboards');
+    }
+    if (!Array.isArray(data.breadboards)) {
+      throw new Error('Invalid breadboards format: must be an array');
+    }
+    if (!data.modules) {
+      throw new Error('Missing required field: modules');
+    }
+    if (!Array.isArray(data.modules)) {
+      throw new Error('Invalid modules format: must be an array');
+    }
+    
+    // Clear existing state first
+    setModules([]);
+    setCables([]);
+    setPendingCable({ from: null, mouse: null });
+    setHoveredPinId(null);
+    
+    setBreadboards(data.breadboards);
+    
+    // Load patch name if available
+    if (data.patchName) {
+      setPatchName(data.patchName);
+    }
+    
+    // For each module, fetch latest meta and merge knob values
+    const loadedModules = await Promise.all(data.modules.map(async (mod: any, index: number) => {
+      try {
+        // Validate module structure
+        if (!mod.type) {
+          throw new Error(`Module ${index + 1}: missing required field 'type'`);
+        }
+        // type becomes part of fetch and image URLs: only a plain module slug is allowed
+        if (typeof mod.type !== 'string' || !/^[A-Za-z0-9_-]+$/.test(mod.type)) {
+          throw new Error(`Module ${index + 1}: invalid module type`);
+        }
+        if (!mod.id) {
+          throw new Error(`Module ${index + 1} (${mod.type}): missing required field 'id'`);
+        }
+        
+        // Fetch latest meta.json for this module type
+        let meta;
+        try {
+          const response = await fetch(`./modules/${mod.type}/meta.json`);
+          if (!response.ok) {
+            throw new Error(`Module ${index + 1} (${mod.type}): meta.json not found (${response.status})`);
+          }
+          meta = await response.json();
+        } catch (fetchError) {
+          throw new Error(`Module ${index + 1} (${mod.type}): failed to load metadata - ${fetchError.message}`);
+        }
+        
+        // Calculate height using image dimensions
+        const cellSize = 18;
+        const margin = 2;
+        const imagePath = `./modules/${mod.type}/panel_large.png`;
+        let height: number;
+        
+        try {
+          const imageDimensions = await loadImageDimensions(imagePath);
+          height = calculateModuleHeight(meta.unitsWidth || mod.width || 5, cellSize, margin, imageDimensions.aspectRatio);
+        } catch (error) {
+          // Fallback to saved height or calculate from breadboard
+          console.warn(`Failed to load image dimensions for ${mod.type}:`, error);
+          height = mod.height || (() => {
+            // If no saved height, fallback to old calculation
+            const numberOfRows = 10; // Default fallback
+            const scaledCellSize = cellSize * BREADBOARD_VERTICAL_SCALE;
+            return numberOfRows * scaledCellSize + (numberOfRows - 1) * margin;
+          })();
+        }
+        
+        // Merge knob values
+        const knobs = Array.isArray(meta.knobs)
+          ? meta.knobs.map((k: any) => ({
+              ...k,
+              value: (mod.knobValues && k.title && mod.knobValues[k.title] !== undefined)
+                ? mod.knobValues[k.title]
+                : 0.5
+            }))
+          : [];
+        // Merge switch values
+        const switches = Array.isArray(meta.switches)
+          ? meta.switches.map((s: any) => ({
+              ...s,
+              value: (mod.switchValues && s.title && mod.switchValues[s.title] !== undefined)
+                ? mod.switchValues[s.title]
+                : false
+            }))
+          : [];
+        return {
+          id: mod.id,
+          type: mod.type,
+          x: mod.x || 0,
+          y: mod.y || 0,
+          width: mod.width || meta.unitsWidth || 5,
+          height,
+          pcbImage: `./modules/${mod.type}/panel.png`,
+          pcbImageLarge: `./modules/${mod.type}/panel_large.png`,
+          pins: Array.isArray(meta.pins) ? meta.pins : [],
+          knobs,
+          switches,
+          breadboardId: mod.breadboardId,
+          legsPattern: meta.legsPattern || "",
+          inputs: Array.isArray(meta.inputs) ? meta.inputs : [],
+          outputs: Array.isArray(meta.outputs) ? meta.outputs : []
+        };
+      } catch (moduleError) {
+        throw new Error(`Module loading error: ${moduleError.message}`);
+      }
+    }));
+    setModules(loadedModules);
+    
+    // Validate and filter cables to ensure all pin references exist
+    const loadedCables = Array.isArray(data.cables) ? data.cables : [];
+    const moduleIds = new Set(loadedModules.map(m => m.id));
+    const invalidCables: string[] = [];
+    const validCables = loadedCables.filter((cable: any, index: number) => {
+      if (!cable.from || !cable.to) {
+        invalidCables.push(`Cable ${index + 1}: missing from/to pins`);
+        return false;
+      }
+      // Extract module IDs from pin IDs (format: moduleId:pinType:ioIndex:pinIndex)
+      const fromModuleId = cable.from.split(':')[0];
+      const toModuleId = cable.to.split(':')[0];
+      const isValid = moduleIds.has(fromModuleId) && moduleIds.has(toModuleId);
+      if (!isValid) {
+        invalidCables.push(`Cable ${index + 1}: references non-existent module (${cable.from} -> ${cable.to})`);
+      }
+      return isValid;
+    });
+    setCables(validCables);
+    
+    return invalidCables;
+  };
+
+  // The current patch is kept in this browser as it changes and brought back when the page opens
+  const patchRestoredRef = useRef(false);
+  const patchRestoreStartedRef = useRef(false);
+  useEffect(() => {
+    if (patchRestoreStartedRef.current) return;
+    patchRestoreStartedRef.current = true;
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(CURRENT_PATCH_STORAGE_KEY);
+    } catch {
+      // Storage unavailable: start with an empty patch
+    }
+    if (!saved) {
+      patchRestoredRef.current = true;
+      return;
+    }
+    setIsLoadingPatch(true);
+    const stored = saved;
+    Promise.resolve()
+      .then(() => applyPatchData(JSON.parse(stored)))
+      .catch(err => console.warn('Could not restore the last patch:', err))
+      .finally(() => {
+        patchRestoredRef.current = true;
+        setIsLoadingPatch(false);
+      });
+  }, []);
+  useEffect(() => {
+    if (!patchRestoredRef.current) return;
+    try {
+      localStorage.setItem(CURRENT_PATCH_STORAGE_KEY, JSON.stringify(buildPatchData()));
+    } catch {
+      // Storage unavailable or full: the patch lasts for this visit only
+    }
+  }, [breadboards, modules, cables, patchName]);
+
+  // Save patch as JSON
+  const handleSavePatch = () => {
+    const data = buildPatchData();
+    data.patchName = patchName || 'untitled';
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -746,143 +929,7 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = async (evt: ProgressEvent<FileReader>) => {
       try {
-        const data: any = JSON.parse(evt.target?.result as string);
-        
-        // Validate patch structure
-        if (!data.breadboards) {
-          throw new Error('Missing required field: breadboards');
-        }
-        if (!Array.isArray(data.breadboards)) {
-          throw new Error('Invalid breadboards format: must be an array');
-        }
-        if (!data.modules) {
-          throw new Error('Missing required field: modules');
-        }
-        if (!Array.isArray(data.modules)) {
-          throw new Error('Invalid modules format: must be an array');
-        }
-        
-        // Clear existing state first
-        setModules([]);
-        setCables([]);
-        setPendingCable({ from: null, mouse: null });
-        setHoveredPinId(null);
-        
-        setBreadboards(data.breadboards);
-        
-        // Load patch name if available
-        if (data.patchName) {
-          setPatchName(data.patchName);
-        }
-        
-        // For each module, fetch latest meta and merge knob values
-        const loadedModules = await Promise.all(data.modules.map(async (mod: any, index: number) => {
-          try {
-            // Validate module structure
-            if (!mod.type) {
-              throw new Error(`Module ${index + 1}: missing required field 'type'`);
-            }
-            // type becomes part of fetch and image URLs: only a plain module slug is allowed
-            if (typeof mod.type !== 'string' || !/^[A-Za-z0-9_-]+$/.test(mod.type)) {
-              throw new Error(`Module ${index + 1}: invalid module type`);
-            }
-            if (!mod.id) {
-              throw new Error(`Module ${index + 1} (${mod.type}): missing required field 'id'`);
-            }
-            
-            // Fetch latest meta.json for this module type
-            let meta;
-            try {
-              const response = await fetch(`./modules/${mod.type}/meta.json`);
-              if (!response.ok) {
-                throw new Error(`Module ${index + 1} (${mod.type}): meta.json not found (${response.status})`);
-              }
-              meta = await response.json();
-            } catch (fetchError) {
-              throw new Error(`Module ${index + 1} (${mod.type}): failed to load metadata - ${fetchError.message}`);
-            }
-            
-            // Calculate height using image dimensions
-            const cellSize = 18;
-            const margin = 2;
-            const imagePath = `./modules/${mod.type}/panel_large.png`;
-            let height: number;
-            
-            try {
-              const imageDimensions = await loadImageDimensions(imagePath);
-              height = calculateModuleHeight(meta.unitsWidth || mod.width || 5, cellSize, margin, imageDimensions.aspectRatio);
-            } catch (error) {
-              // Fallback to saved height or calculate from breadboard
-              console.warn(`Failed to load image dimensions for ${mod.type}:`, error);
-              height = mod.height || (() => {
-                // If no saved height, fallback to old calculation
-                const numberOfRows = 10; // Default fallback
-                const scaledCellSize = cellSize * BREADBOARD_VERTICAL_SCALE;
-                return numberOfRows * scaledCellSize + (numberOfRows - 1) * margin;
-              })();
-            }
-            
-            // Merge knob values
-            const knobs = Array.isArray(meta.knobs)
-              ? meta.knobs.map((k: any) => ({
-                  ...k,
-                  value: (mod.knobValues && k.title && mod.knobValues[k.title] !== undefined)
-                    ? mod.knobValues[k.title]
-                    : 0.5
-                }))
-              : [];
-            // Merge switch values
-            const switches = Array.isArray(meta.switches)
-              ? meta.switches.map((s: any) => ({
-                  ...s,
-                  value: (mod.switchValues && s.title && mod.switchValues[s.title] !== undefined)
-                    ? mod.switchValues[s.title]
-                    : false
-                }))
-              : [];
-            return {
-              id: mod.id,
-              type: mod.type,
-              x: mod.x || 0,
-              y: mod.y || 0,
-              width: mod.width || meta.unitsWidth || 5,
-              height,
-              pcbImage: `./modules/${mod.type}/panel.png`,
-              pcbImageLarge: `./modules/${mod.type}/panel_large.png`,
-              pins: Array.isArray(meta.pins) ? meta.pins : [],
-              knobs,
-              switches,
-              breadboardId: mod.breadboardId,
-              legsPattern: meta.legsPattern || "",
-              inputs: Array.isArray(meta.inputs) ? meta.inputs : [],
-              outputs: Array.isArray(meta.outputs) ? meta.outputs : []
-            };
-          } catch (moduleError) {
-            throw new Error(`Module loading error: ${moduleError.message}`);
-          }
-        }));
-        setModules(loadedModules);
-        
-        // Validate and filter cables to ensure all pin references exist
-        const loadedCables = Array.isArray(data.cables) ? data.cables : [];
-        const moduleIds = new Set(loadedModules.map(m => m.id));
-        const invalidCables: string[] = [];
-        const validCables = loadedCables.filter((cable: any, index: number) => {
-          if (!cable.from || !cable.to) {
-            invalidCables.push(`Cable ${index + 1}: missing from/to pins`);
-            return false;
-          }
-          // Extract module IDs from pin IDs (format: moduleId:pinType:ioIndex:pinIndex)
-          const fromModuleId = cable.from.split(':')[0];
-          const toModuleId = cable.to.split(':')[0];
-          const isValid = moduleIds.has(fromModuleId) && moduleIds.has(toModuleId);
-          if (!isValid) {
-            invalidCables.push(`Cable ${index + 1}: references non-existent module (${cable.from} -> ${cable.to})`);
-          }
-          return isValid;
-        });
-        setCables(validCables);
-        
+        const invalidCables = await applyPatchData(JSON.parse(evt.target?.result as string));
         // Show warning about invalid cables if any were found
         if (invalidCables.length > 0) {
           console.warn('Some cables were skipped during load:', invalidCables);
