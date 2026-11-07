@@ -14,6 +14,8 @@ Based on [micropatch](https://github.com/ignis32/micropatch) by Mikhail Penkin (
 - Publishing workflow pinned to exact action versions, with least-privilege permissions.
 - Dependencies pinned and checked against known vulnerabilities; the published app has none known.
 - Local dev server reachable only from the same computer.
-- Module downloader rejects unsafe folder names and cannot hang.
+- Content-Security-Policy limits the app to its own files.
+- Loaded patch files cannot point the app at other files on the site.
+- Module downloader accepts only safe names and paths, from microrack.org only, and cannot hang.
 - Removed committed assistant settings that allowed unattended deletes and pushes.
 - Main branch protected; no outside contributions.

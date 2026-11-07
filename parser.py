@@ -12,6 +12,12 @@ OUTDIR = "microrack_modules"
 def safe_name(name):
     return re.sub(r"[^a-zA-Z0-9_\-]", "_", name)
 
+def asset_url(path):
+    # Remote paths must stay on microrack.org: "@host" or ".host" would change the host
+    if not isinstance(path, str) or not path.startswith("/"):
+        raise ValueError(f"unexpected image path {path!r}")
+    return BASE_URL + path
+
 def download_image(img_url, out_path):
     try:
         r = requests.get(img_url, timeout=15)
@@ -50,16 +56,16 @@ def main():
                 img_attr = images[0]["attributes"]
                 formats = img_attr.get("formats", {})
                 # Оригинал
-                img_formats["panel.png"] = BASE_URL + img_attr["url"]
+                img_formats["panel.png"] = asset_url(img_attr["url"])
                 # Версии (если есть)
                 if "large" in formats:
-                    img_formats["panel_large.png"] = BASE_URL + formats["large"]["url"]
+                    img_formats["panel_large.png"] = asset_url(formats["large"]["url"])
                 if "medium" in formats:
-                    img_formats["panel_medium.png"] = BASE_URL + formats["medium"]["url"]
+                    img_formats["panel_medium.png"] = asset_url(formats["medium"]["url"])
                 if "small" in formats:
-                    img_formats["panel_small.png"] = BASE_URL + formats["small"]["url"]
+                    img_formats["panel_small.png"] = asset_url(formats["small"]["url"])
                 if "thumbnail" in formats:
-                    img_formats["panel_thumb.png"] = BASE_URL + formats["thumbnail"]["url"]
+                    img_formats["panel_thumb.png"] = asset_url(formats["thumbnail"]["url"])
         except Exception as e:
             print(f"  ⚠ Нет картинок для {slug}: {e}")
 

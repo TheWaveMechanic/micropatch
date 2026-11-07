@@ -782,6 +782,10 @@ export default function App() {
             if (!mod.type) {
               throw new Error(`Module ${index + 1}: missing required field 'type'`);
             }
+            // type becomes part of fetch and image URLs: only a plain module slug is allowed
+            if (typeof mod.type !== 'string' || !/^[A-Za-z0-9_-]+$/.test(mod.type)) {
+              throw new Error(`Module ${index + 1}: invalid module type`);
+            }
             if (!mod.id) {
               throw new Error(`Module ${index + 1} (${mod.type}): missing required field 'id'`);
             }
