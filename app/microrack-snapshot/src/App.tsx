@@ -43,7 +43,7 @@ const PATCH_SCALE_STORAGE_KEY = 'micropatch.patchAreaScale';
 function loadPatchScale() {
   try {
     const v = Number(localStorage.getItem(PATCH_SCALE_STORAGE_KEY));
-    if (v >= 10 && v <= 100) return v;
+    if (v >= 50 && v <= 100) return v;
   } catch {
     // Storage unavailable: use full size
   }
@@ -84,7 +84,7 @@ export default function App() {
   const [hoveredModuleCoords, setHoveredModuleCoords] = useState<{moduleId: string, x: number, y: number} | null>(null);
   const [isLoadingPatch, setIsLoadingPatch] = useState(false);
   const [patchName, setPatchName] = useState('');
-  // Patching-area scale in percent (10-100), remembered between visits
+  // Patching-area scale in percent (50-100), remembered between visits
   const [patchScale, setPatchScale] = useState<number>(loadPatchScale);
   const [patchScaleDraft, setPatchScaleDraft] = useState<string>(() => String(loadPatchScale()));
   // Committed scale: sets the page layout size and is saved; the slider commits it on release
@@ -125,7 +125,7 @@ export default function App() {
   const layoutScaleFactor = layoutScale / 100;
   const commitPatchScaleDraft = () => {
     const v = Number(patchScaleDraft);
-    const clamped = patchScaleDraft === '' || isNaN(v) ? patchScale : Math.min(100, Math.max(10, v));
+    const clamped = patchScaleDraft === '' || isNaN(v) ? patchScale : Math.min(100, Math.max(50, v));
     patchScaleLiveRef.current = clamped;
     setPatchScale(clamped);
     setLayoutScale(clamped);
@@ -1301,7 +1301,7 @@ export default function App() {
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input
                   type="range"
-                  min={10}
+                  min={50}
                   max={100}
                   step={1}
                   value={patchScale}
@@ -1326,7 +1326,7 @@ export default function App() {
                 />
                 <input
                   type="number"
-                  min={10}
+                  min={50}
                   max={100}
                   step="any"
                   value={patchScaleDraft}
