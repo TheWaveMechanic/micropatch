@@ -38,15 +38,6 @@ function clientToSvg(svg: SVGSVGElement, clientX: number, clientY: number) {
   };
 }
 
-// New modules from the list are targeted by the pointer and never by the remove zone;
-// modules already placed keep the default rectangle detection
-const collisionDetection: CollisionDetection = (args) => {
-  if (args.active.data.current?.meta) {
-    return pointerWithin(args).filter(c => c.id !== 'module-browser-dropzone');
-  }
-  return rectIntersection(args);
-};
-
 const PATCH_SCALE_STORAGE_KEY = 'micropatch.patchAreaScale';
 
 function loadPatchScale() {
@@ -146,6 +137,16 @@ export default function App() {
   };
   // Placement computed for the board under the pointer (null when no board is under it)
   const pointerPreviewRef = useRef<{ boardId: string; x: number; y: number; valid: boolean } | null>(null);
+  // Option/Alt held when a placed module's drag started: drop a copy, keep the original
+  const duplicateDragRef = useRef(false);
+  // New modules from the list and Option/Alt copies are targeted by the pointer and never by the
+  // remove zone; modules being moved keep the default rectangle detection
+  const collisionDetection: CollisionDetection = (args) => {
+    if (args.active.data.current?.meta || duplicateDragRef.current) {
+      return pointerWithin(args).filter(c => c.id !== 'module-browser-dropzone');
+    }
+    return rectIntersection(args);
+  };
   // Places a new module's drag image exactly where it will land (the placement under the pointer),
   // or centered on the pointer when no board is under it
   const newModuleOverlayModifier: Modifier = ({ transform, activatorEvent, activeNodeRect }) => {
@@ -500,10 +501,21 @@ export default function App() {
 
   const handleDragStart = (event: any) => {
     // Support both new (from browser) and existing (from breadboard) modules
+    duplicateDragRef.current = false;
     if (event.active.data.current?.type === 'existing') {
       // Ensure legsPattern is included
       const mod = event.active.data.current.mod;
-      setDraggedModule({ ...mod, legsPattern: mod.legsPattern });
+      if (event.activatorEvent?.altKey) {
+        // Copy: the original counts as an obstacle, and the copy shows like a new module
+        duplicateDragRef.current = true;
+        setDraggedModule({ ...mod, id: undefined, legsPattern: mod.legsPattern });
+        overlayOriginRef.current = null;
+        setMouseClientX(undefined);
+        setMouseClientY(undefined);
+        setNewModuleOverlay({ slug: mod.type, unitsWidth: mod.width, height: mod.height });
+      } else {
+        setDraggedModule({ ...mod, legsPattern: mod.legsPattern });
+      }
     } else if (event.active.data.current?.meta) {
       const meta = event.active.data.current.meta;
       setDraggedModule(meta);
@@ -531,12 +543,14 @@ export default function App() {
     // Place on the board under the pointer, which the preview was computed for
     const pointerPreview = pointerPreviewRef.current;
     pointerPreviewRef.current = null;
+    const isDuplicate = duplicateDragRef.current;
+    duplicateDragRef.current = false;
     const { over, active } = event;
     if (!over || !active) return;
     const overId = over.id;
 
     // Handle delete by dropping on module browser
-    if (overId === 'module-browser-dropzone' && active.data.current?.type === 'existing') {
+    if (overId === 'module-browser-dropzone' && active.data.current?.type === 'existing' && !isDuplicate) {
       const deletedModuleId = active.data.current.modId;
       setModules(mods => mods.filter(m => m.id !== deletedModuleId));
       // Clean up cables connected to deleted module
@@ -545,6 +559,25 @@ export default function App() {
         const toModuleId = cable.to.split(':')[0];
         return fromModuleId !== deletedModuleId && toModuleId !== deletedModuleId;
       }));
+      return;
+    }
+
+    // Option/Alt copy of a placed module: new instance, same knob/switch values, no cables
+    if (isDuplicate) {
+      const original = modules.find(m => m.id === active.data.current?.modId);
+      if (!original || !overId?.startsWith('breadboard-svg-') || !pointerPreview || !pointerPreview.valid) return;
+      setModules(mods => [
+        ...mods,
+        {
+          ...original,
+          id: uuidv4(),
+          breadboardId: pointerPreview.boardId,
+          x: pointerPreview.x,
+          y: pointerPreview.y,
+          knobs: original.knobs.map(k => ({ ...k })),
+          switches: original.switches.map(s => ({ ...s }))
+        }
+      ]);
       return;
     }
 
@@ -1768,8 +1801,8 @@ export default function App() {
         </div>
       </div>
       <DragOverlay dropAnimation={null} modifiers={[newModuleOverlayModifier]}>
-        {/* New module from the list: its panel at the size it will have when placed, where it will land */}
-        {newModuleOverlay && draggedModule?.slug === newModuleOverlay.slug && (
+        {/* New module from the list or Option/Alt copy: its panel at the size it will have when placed, where it will land */}
+        {newModuleOverlay && draggedModule && (draggedModule.slug ?? draggedModule.type) === newModuleOverlay.slug && (
           <img
             src={`./modules/${newModuleOverlay.slug}/panel_large.png`}
             alt=""
