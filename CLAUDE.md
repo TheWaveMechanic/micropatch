@@ -14,7 +14,6 @@ The main application is in `app/microrack-snapshot/` which is a React TypeScript
 ### Frontend Development (in app/microrack-snapshot/ if running locally)
 - `npm run dev` - Start development server
 - `npm run build` - Build for production (runs TypeScript compilation then Vite build)
-- `npm run lint` - Run ESLint
 - `npm run preview` - Preview production build
 
 ### Module Management
