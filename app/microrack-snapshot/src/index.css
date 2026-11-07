@@ -30,6 +30,11 @@ body {
   min-height: 100vh;
 }
 
+/* Center the app when the window is wider; a wider app still starts at the left edge and scrolls */
+#root {
+  margin: 0 auto;
+}
+
 h1 {
   font-size: 3.2em;
   line-height: 1.1;

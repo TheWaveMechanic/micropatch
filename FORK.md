@@ -8,6 +8,7 @@ Based on [micropatch](https://github.com/ignis32/micropatch) by Mikhail Penkin (
 - Size slider (50–100%); the page shrinks with it.
 - Dragged modules show at their landing spot, half transparent.
 - Option/Alt-drag duplicates a placed module.
+- The app sits centered in a window wider than itself.
 - **Save as PDF** in Patch Management, showing that it is working: boards, cables and labels as vector, module art as images, a small file.
 - The current patch is kept in the browser and comes back when the page reopens; nothing leaves the computer.
 - **Initialize Patch** in Patch Management starts over with one empty breadboard, after asking to confirm.
