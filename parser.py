@@ -25,12 +25,12 @@ def download_image(img_url, out_path):
 def main():
     os.makedirs(OUTDIR, exist_ok=True)
     print("Загружаю список модулей...")
-    resp = requests.get(API_URL)
+    resp = requests.get(API_URL, timeout=15)
     data = resp.json()
 
     for mod in data['data']:
         attr = mod['attributes']
-        slug = attr.get('slug') or safe_name(attr.get('name', 'mod'))
+        slug = safe_name(attr.get("slug") or attr.get("name") or "mod")
         folder = os.path.join(OUTDIR, slug)
         os.makedirs(folder, exist_ok=True)
 
@@ -41,7 +41,7 @@ def main():
 
         # Детальный запрос для картинок
         detail_url = MOD_URL.format(slug=slug)
-        detail_resp = requests.get(detail_url)
+        detail_resp = requests.get(detail_url, timeout=15)
         detail = detail_resp.json()
         img_formats = {}
         try:

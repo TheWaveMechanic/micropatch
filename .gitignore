@@ -146,4 +146,4 @@ cropping_images.txt
 also.txt
 
 # TypeScript cache
-*.tsbuildinfo
+*.tsbuildinfo.claude/settings.local.json
