@@ -11,7 +11,7 @@ Based on [micropatch](https://github.com/ignis32/micropatch) by Mikhail Penkin (
 - **Save as PDF** in Patch Management, showing that it is working.
 - The current patch is kept in the browser and comes back when the page reopens; nothing leaves the computer.
 - **Initialize Patch** in Patch Management starts over with one empty breadboard, after asking to confirm.
-- Updated module art to match the current hardware: colored bottom bands, and the "vca" label on the Mixer / VCA.
+- Updated module art to match the current hardware: colored bottom bands, the "vca" label on the Mixer / VCA, top jacks standing clear of the board, and the MIDI module at its true 15-column width.
 
 ## Security
 - Publishing workflow pinned to exact action versions, with least-privilege permissions.
