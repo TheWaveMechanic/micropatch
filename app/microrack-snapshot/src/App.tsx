@@ -87,16 +87,19 @@ export default function App() {
   // Patching-area scale in percent (10-100), remembered between visits
   const [patchScale, setPatchScale] = useState<number>(loadPatchScale);
   const [patchScaleDraft, setPatchScaleDraft] = useState<string>(() => String(loadPatchScale()));
+  // Committed scale: sets the page layout size and is saved; the slider commits it on release
+  const [layoutScale, setLayoutScale] = useState<number>(loadPatchScale);
+  const patchScaleLiveRef = useRef(patchScale);
   const [patchAreaHeight, setPatchAreaHeight] = useState(0);
   const [patchAreaMinWidth, setPatchAreaMinWidth] = useState(0);
   const patchAreaRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     try {
-      localStorage.setItem(PATCH_SCALE_STORAGE_KEY, String(patchScale));
+      localStorage.setItem(PATCH_SCALE_STORAGE_KEY, String(layoutScale));
     } catch {
       // Storage unavailable: setting lasts for this visit only
     }
-  }, [patchScale]);
+  }, [layoutScale]);
   // Unscaled height and widest board panel of the patching area, so the page shrinks with the scale
   useEffect(() => {
     const el = patchAreaRef.current;
@@ -119,6 +122,15 @@ export default function App() {
     return () => observer.disconnect();
   }, [breadboards, layouts]);
   const patchScaleFactor = patchScale / 100;
+  const layoutScaleFactor = layoutScale / 100;
+  const commitPatchScaleDraft = () => {
+    const v = Number(patchScaleDraft);
+    const clamped = patchScaleDraft === '' || isNaN(v) ? patchScale : Math.min(100, Math.max(10, v));
+    patchScaleLiveRef.current = clamped;
+    setPatchScale(clamped);
+    setLayoutScale(clamped);
+    setPatchScaleDraft(String(clamped));
+  };
   // Placement computed for the board under the pointer (null when no board is under it)
   const pointerPreviewRef = useRef<{ boardId: string; x: number; y: number; valid: boolean } | null>(null);
   // Ref to always have latest pendingCable in pointer event handlers
@@ -1056,10 +1068,13 @@ export default function App() {
         {/* Main: Breadboard rendering area */}
         <div style={{ flex: 1, padding: 24, position: 'relative' }}>
           {/* Patching-area scale: outer box takes the scaled size, inner box is scaled and out of flow */}
-          <div style={patchScale !== 100 ? { position: 'relative', height: patchAreaHeight * patchScaleFactor, minWidth: patchAreaMinWidth * patchScaleFactor } : undefined}>
+          <div style={layoutScale !== 100 ? { position: 'relative', height: patchAreaHeight * layoutScaleFactor, minWidth: patchAreaMinWidth * layoutScaleFactor } : undefined}>
           <div
             ref={patchAreaRef}
-            style={patchScale !== 100 ? { position: 'absolute', top: 0, left: 0, transform: `scale(${patchScaleFactor})`, transformOrigin: '0 0', width: `${100 / patchScaleFactor}%` } : undefined}
+            style={patchScale !== 100 || layoutScale !== 100 ? {
+              ...(layoutScale !== 100 ? { position: 'absolute' as const, top: 0, left: 0, width: `${100 / patchScaleFactor}%` } : {}),
+              ...(patchScale !== 100 ? { transform: `scale(${patchScaleFactor})`, transformOrigin: '0 0' } : {})
+            } : undefined}
           >
           {/* Render all breadboards as SVG */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: BREADBOARD_SPACING, position: 'relative', zIndex: 1 }}>
@@ -1292,9 +1307,20 @@ export default function App() {
                   value={patchScale}
                   onChange={e => {
                     const v = Number(e.target.value);
+                    patchScaleLiveRef.current = v;
                     setPatchScale(v);
                     setPatchScaleDraft(String(v));
                   }}
+                  onPointerDown={() => {
+                    const release = () => {
+                      window.removeEventListener('pointerup', release);
+                      window.removeEventListener('pointercancel', release);
+                      setLayoutScale(patchScaleLiveRef.current);
+                    };
+                    window.addEventListener('pointerup', release);
+                    window.addEventListener('pointercancel', release);
+                  }}
+                  onKeyUp={() => setLayoutScale(patchScaleLiveRef.current)}
                   style={{ flex: 1, minWidth: 0 }}
                   aria-label="Patch area scale"
                 />
@@ -1304,17 +1330,9 @@ export default function App() {
                   max={100}
                   step="any"
                   value={patchScaleDraft}
-                  onChange={e => {
-                    setPatchScaleDraft(e.target.value);
-                    const v = Number(e.target.value);
-                    if (e.target.value !== '' && v >= 10 && v <= 100) setPatchScale(v);
-                  }}
-                  onBlur={() => {
-                    const v = Number(patchScaleDraft);
-                    const clamped = patchScaleDraft === '' || isNaN(v) ? patchScale : Math.min(100, Math.max(10, v));
-                    setPatchScale(clamped);
-                    setPatchScaleDraft(String(clamped));
-                  }}
+                  onChange={e => setPatchScaleDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') commitPatchScaleDraft(); }}
+                  onBlur={commitPatchScaleDraft}
                   style={{ width: 64, padding: "6px 8px", borderRadius: 6, border: "1px solid #555", background: "#222", color: "#fff" }}
                   aria-label="Patch area scale percent"
                 />
