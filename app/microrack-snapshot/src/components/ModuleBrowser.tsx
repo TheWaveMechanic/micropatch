@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useDraggable, useDroppable } from '@dnd-kit/core'
+import { useDraggable, useDroppable, useDndContext } from '@dnd-kit/core'
 
 interface ModuleMeta {
   slug: string
@@ -69,6 +69,21 @@ export default function ModuleBrowser({ onAddModule }: ModuleBrowserProps) {
   const [filterText, setFilterText] = useState('')
 
   const { setNodeRef, isOver } = useDroppable({ id: 'module-browser-dropzone' });
+  const { active } = useDndContext();
+  // Warning shows while the pointer hovers over the list, and goes away once the mouse is pressed to drag
+  const [hovering, setHovering] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  useEffect(() => {
+    if (!pressed) return;
+    const release = () => setPressed(false);
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+    return () => {
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+    };
+  }, [pressed]);
+  const showWarning = isOver || (hovering && !pressed && !active);
 
   useEffect(() => {
     fetch("./modules_index.json")
@@ -96,9 +111,12 @@ export default function ModuleBrowser({ onAddModule }: ModuleBrowserProps) {
   return (
     <div
       ref={setNodeRef}
+      onPointerEnter={() => setHovering(true)}
+      onPointerLeave={() => setHovering(false)}
+      onPointerDown={() => setPressed(true)}
       style={{
         height: "100%", overflowY: "auto", minWidth: 220,
-        maxWidth: 260, borderRight: "1px solid #333", background: isOver ? "#2a2a2a" : "#161616",
+        maxWidth: 260, borderRight: "1px solid #333", background: showWarning ? "#2a2a2a" : "#161616",
         transition: 'background 0.2s'
       }}
       aria-label="Module Browser (Drop here to delete)"
@@ -127,7 +145,7 @@ export default function ModuleBrowser({ onAddModule }: ModuleBrowserProps) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {filteredMetas.map(meta => <ModuleItem key={meta.slug} meta={meta} onAddModule={onAddModule} />)}
       </div>
-      {isOver && (
+      {showWarning && (
         <div style={{
           position: 'absolute',
           top: 0,
