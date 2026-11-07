@@ -1219,62 +1219,15 @@ export default function App() {
     document.body.style.cursor = 'progress';
     await new Promise<void>(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
     try {
-      const [{ toCanvas }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')]);
-      const scale = patchScaleFactor;
-      const containerRect = mainContainer.getBoundingClientRect();
-      // On-screen bounds of the patch: board panels and drawn cables
-      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
-      const include = (r: DOMRect, pad = 0) => {
-        left = Math.min(left, r.left - pad);
-        top = Math.min(top, r.top - pad);
-        right = Math.max(right, r.right + pad);
-        bottom = Math.max(bottom, r.bottom + pad);
-      };
-      breadboards.forEach(board => {
-        const panel = document.getElementById(`breadboard-svg-${board.id}`)?.parentElement;
-        if (panel) include(panel.getBoundingClientRect());
+      // Boards, cables and text as vector, module art as images; the debug overlay is not drawn
+      const { buildPatchPdf } = await import('./utils/pdfExport');
+      const doc = await buildPatchPdf({
+        container: mainContainer,
+        boardIds: breadboards.map(board => board.id),
+        scale: patchScaleFactor,
+        title: patchName || 'untitled'
       });
-      mainContainer.querySelectorAll(':scope > div > svg path').forEach(path => include(path.getBoundingClientRect(), 6 * scale));
-      if (!isFinite(left)) return;
-      left = Math.max(left, containerRect.left);
-      top = Math.max(top, containerRect.top);
-      right = Math.min(right, containerRect.right);
-      bottom = Math.min(bottom, containerRect.bottom);
-
-      const canvas = await toCanvas(mainContainer, {
-        pixelRatio: 2 / scale,
-        backgroundColor: '#181818',
-        // Leave out the debug overlay
-        filter: node => !(node instanceof HTMLElement && node.style.zIndex === '15')
-      });
-      const ratio = canvas.width / containerRect.width;
-      const crop = document.createElement('canvas');
-      crop.width = Math.round((right - left) * ratio);
-      crop.height = Math.round((bottom - top) * ratio);
-      const ctx = crop.getContext('2d');
-      if (!ctx) throw new Error('Canvas unavailable');
-      ctx.drawImage(canvas, (left - containerRect.left) * ratio, (top - containerRect.top) * ratio, crop.width, crop.height, 0, 0, crop.width, crop.height);
-
-      // Page in CSS px at full size: margin, title, patch
-      const width = (right - left) / scale;
-      const height = (bottom - top) / scale;
-      const margin = 24;
-      const titleHeight = 40;
-      const pageWidth = width + 2 * margin;
-      const pageHeight = height + titleHeight + 2 * margin;
-      const doc = new jsPDF({
-        orientation: pageWidth > pageHeight ? 'landscape' : 'portrait',
-        unit: 'px',
-        format: [pageWidth, pageHeight],
-        hotfixes: ['px_scaling']
-      });
-      doc.setFillColor(24, 24, 24);
-      doc.rect(0, 0, pageWidth, pageHeight, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(15); // 20px
-      doc.text(patchName || 'untitled', margin, margin, { baseline: 'top' });
-      // High-quality JPEG: a raw bitmap of the patch would make the file tens of MB
-      doc.addImage(crop.toDataURL('image/jpeg', 0.9), 'JPEG', margin, margin + titleHeight, width, height);
+      if (!doc) return;
       doc.save(patchName ? `${patchName}.pdf` : `micropatch-patch-${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (error) {
       console.error('Failed to save PDF:', error);

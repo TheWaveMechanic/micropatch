@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // Content-Security-Policy for the published site (build only: the dev server injects inline scripts).
-// Everything is served from the site itself; html-to-image needs data: images and data: fetches.
+// Everything is served from the site itself; data: is allowed for the images the PDF export builds in the page.
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
